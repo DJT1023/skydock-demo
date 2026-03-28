@@ -1,0 +1,250 @@
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ── File sequences (matches your actual file names) ────────────────────────────
+
+// Phase 1: Rotation from 45° down to 0° (10 steps, 5° each)
+const PHASE1_FILES = [
+  'RotateDock_045deg.glb',
+  'RotateDock_040deg.glb',
+  'RotateDock_035deg.glb',
+  'RotateDock_030deg.glb',
+  'RotateDock_025deg.glb',
+  'RotateDock_020deg.glb',
+  'RotateDock_015deg.glb',
+  'RotateDock_010deg.glb',
+  'RotateDock_005deg.glb',
+  'RotateDock_000deg.glb',
+];
+
+// Phase 2: Platform extends outward 5in–25in (5 steps)
+const PHASE2_FILES = [
+  'RD_Plat5in.glb',
+  'RD_Plat10in.glb',
+  'RD_Plat15in.glb',
+  'RD_Plat20in.glb',
+  'RD_Plat25in.glb',
+];
+
+// Phase 3: Platform panels slide apart (7 steps)
+const PHASE3_FILES = [
+  'LSPan01.glb',
+  'LSPan02.glb',
+  'LSPan03.glb',
+  'LSPan04.glb',
+  'LSPan05.glb',
+  'LSPan06.glb',
+  'LSPan07.glb',
+];
+
+const ALL_PHASES = [PHASE1_FILES, PHASE2_FILES, PHASE3_FILES];
+
+export class ReceptacleController {
+  constructor(scene) {
+    this.scene = scene;
+    this.loader = new GLTFLoader();
+
+    // Current displayed mesh
+    this.currentMesh = null;
+
+    // Cached loaded GLTFs per filename
+    this.cache = {};
+
+    // State
+    this.isVisible = false;
+    this.currentPhase = 0;      // 0, 1, 2
+    this.currentFrame = 0;      // index within phase
+    this.isAnimating = false;
+    this.animTimer = 0;
+    this.frameDuration = 0.18;  // seconds per frame (adjust for speed)
+
+    // Where to place the receptacle (set by controls.js when approaching delivery house)
+    this.position = new THREE.Vector3(60, 0, -30);
+    this.roofY = 0; // set dynamically
+
+    // Fallback: procedural placeholder shown when GLB not yet loaded
+    this._buildPlaceholder();
+
+    // Preload all frames in background
+    this._preloadAll();
+  }
+
+  // ── Placeholder (shown before GLBs load or if they fail) ──────────────────
+  _buildPlaceholder() {
+    const geo = new THREE.BoxGeometry(3, 0.15, 3);
+    const mat = new THREE.MeshLambertMaterial({ color: 0x2244aa, transparent: true, opacity: 0.85 });
+    this.placeholder = new THREE.Mesh(geo, mat);
+
+    // Pivot hinge indicator
+    const hingeGeo = new THREE.CylinderGeometry(0.08, 0.08, 3.2, 8);
+    const hingeMat = new THREE.MeshLambertMaterial({ color: 0x00d4ff });
+    const hinge = new THREE.Mesh(hingeGeo, hingeMat);
+    hinge.rotation.z = Math.PI / 2;
+    this.placeholder.add(hinge);
+
+    // Border frame lines
+    const edges = new THREE.EdgesGeometry(geo);
+    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x00d4ff }));
+    this.placeholder.add(line);
+
+    this.placeholder.visible = false;
+    this.scene.add(this.placeholder);
+  }
+
+  // ── Preload all GLB files in the background ────────────────────────────────
+  _preloadAll() {
+    const allFiles = ALL_PHASES.flat();
+    let loaded = 0;
+    const loadStatus = document.getElementById('loading-status');
+
+    allFiles.forEach(file => {
+      const url = `/assets/${file}`;
+      this.loader.load(
+        url,
+        (gltf) => {
+          this.cache[file] = gltf;
+          loaded++;
+          if (loadStatus) {
+            const pct = Math.round((loaded / allFiles.length) * 80);
+            const bar = document.getElementById('loading-bar-fill');
+            if (bar) bar.style.width = pct + '%';
+            loadStatus.textContent = `Loading assets... ${loaded}/${allFiles.length}`;
+          }
+        },
+        undefined,
+        (err) => {
+          // GLB not found — silently mark as missing, placeholder will be used
+          this.cache[file] = null;
+          loaded++;
+          console.warn(`[ReceptacleController] Could not load ${file} — using placeholder.`);
+        }
+      );
+    });
+  }
+
+  // ── Place the receptacle on a rooftop ─────────────────────────────────────
+  placeAt(x, y, z) {
+    this.position.set(x, y, z);
+    this.roofY = y;
+    this.placeholder.position.set(x, y, z);
+    this.placeholder.rotation.z = Math.PI / 4; // Start at 45°
+    this.isVisible = false;
+    this.currentPhase = 0;
+    this.currentFrame = 0;
+  }
+
+  // ── Show/hide ──────────────────────────────────────────────────────────────
+  show() {
+    this.isVisible = true;
+    this._showFrame(0, 0);
+  }
+
+  hide() {
+    this.isVisible = false;
+    if (this.currentMesh) {
+      this.scene.remove(this.currentMesh);
+      this.currentMesh = null;
+    }
+    this.placeholder.visible = false;
+  }
+
+  // ── Start the full transition sequence ────────────────────────────────────
+  startTransition(onComplete) {
+    if (this.isAnimating) return;
+    this.isAnimating = true;
+    this.currentPhase = 0;
+    this.currentFrame = 0;
+    this.animTimer = 0;
+    this._onComplete = onComplete || null;
+    this.show();
+  }
+
+  // ── Tick: called every frame from controls.js ─────────────────────────────
+  update(delta) {
+    if (!this.isAnimating || !this.isVisible) return;
+
+    this.animTimer += delta;
+    if (this.animTimer < this.frameDuration) return;
+    this.animTimer = 0;
+
+    const phase = ALL_PHASES[this.currentPhase];
+    this.currentFrame++;
+
+    if (this.currentFrame >= phase.length) {
+      // Advance to next phase
+      this.currentPhase++;
+      this.currentFrame = 0;
+
+      if (this.currentPhase >= ALL_PHASES.length) {
+        // All phases complete
+        this.isAnimating = false;
+        if (this._onComplete) this._onComplete();
+        return;
+      }
+    }
+
+    this._showFrame(this.currentPhase, this.currentFrame);
+  }
+
+  // ── Display a specific frame ───────────────────────────────────────────────
+  _showFrame(phaseIdx, frameIdx) {
+    const file = ALL_PHASES[phaseIdx][frameIdx];
+
+    // Remove previous mesh
+    if (this.currentMesh) {
+      this.scene.remove(this.currentMesh);
+      this.currentMesh = null;
+    }
+
+    if (this.cache[file]) {
+      // Use loaded GLB
+      const gltf = this.cache[file];
+      const model = gltf.scene.clone();
+      model.position.copy(this.position);
+      model.traverse(child => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      this.scene.add(model);
+      this.currentMesh = model;
+      this.placeholder.visible = false;
+    } else {
+      // Fallback to placeholder with animated rotation/extension
+      this.placeholder.visible = true;
+      this.placeholder.position.copy(this.position);
+
+      if (phaseIdx === 0) {
+        // Simulate rotation: 45° → 0°
+        const t = frameIdx / (PHASE1_FILES.length - 1);
+        this.placeholder.rotation.z = (Math.PI / 4) * (1 - t);
+      } else if (phaseIdx === 1) {
+        // Simulate extension
+        const t = frameIdx / (PHASE2_FILES.length - 1);
+        this.placeholder.scale.x = 1 + t * 0.8;
+        this.placeholder.rotation.z = 0;
+      } else if (phaseIdx === 2) {
+        // Simulate panels sliding
+        const t = frameIdx / (PHASE3_FILES.length - 1);
+        this.placeholder.scale.x = 1.8 + t * 0.8;
+        this.placeholder.scale.z = 1 + t * 0.5;
+      }
+    }
+  }
+
+  // ── Jump directly to final (fully open) state ─────────────────────────────
+  showOpen() {
+    this._showFrame(2, PHASE3_FILES.length - 1);
+  }
+
+  // ── Jump to closed state ───────────────────────────────────────────────────
+  showClosed() {
+    this._showFrame(0, 0);
+  }
+
+  // ── Change animation speed ────────────────────────────────────────────────
+  setSpeed(fps) {
+    this.frameDuration = 1 / fps;
+  }
+}

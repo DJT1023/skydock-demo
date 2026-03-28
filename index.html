@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyDock — UAV Rooftop Delivery System</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --sky-top: #0a0e1a;
+      --sky-mid: #1a2a4a;
+      --accent: #00d4ff;
+      --accent2: #ff6b35;
+      --text: #e8f4fd;
+      --text-dim: #7a9bb5;
+      --panel-bg: rgba(10, 20, 40, 0.85);
+      --panel-border: rgba(0, 212, 255, 0.3);
+    }
+
+    body {
+      background: var(--sky-top);
+      color: var(--text);
+      font-family: 'Exo 2', sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+    }
+
+    #canvas-container canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* ── Mode selector overlay ── */
+    #mode-select {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(180deg, rgba(10,14,26,0.97) 0%, rgba(10,14,26,0.92) 100%);
+      backdrop-filter: blur(4px);
+    }
+
+    #mode-select .logo {
+      font-family: 'Orbitron', monospace;
+      font-size: clamp(2rem, 6vw, 4.5rem);
+      font-weight: 900;
+      letter-spacing: 0.15em;
+      color: var(--accent);
+      text-shadow: 0 0 40px rgba(0,212,255,0.5);
+      margin-bottom: 0.25em;
+    }
+
+    #mode-select .tagline {
+      font-size: clamp(0.8rem, 2vw, 1.1rem);
+      color: var(--text-dim);
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      margin-bottom: 4rem;
+    }
+
+    .mode-cards {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 0 1.5rem;
+    }
+
+    .mode-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 2.5rem 3rem;
+      cursor: pointer;
+      transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+      text-align: center;
+      min-width: 240px;
+      max-width: 300px;
+    }
+
+    .mode-card:hover {
+      transform: translateY(-6px);
+      border-color: var(--accent);
+      box-shadow: 0 0 30px rgba(0,212,255,0.2);
+    }
+
+    .mode-card .icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      display: block;
+    }
+
+    .mode-card h2 {
+      font-family: 'Orbitron', monospace;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+
+    .mode-card p {
+      font-size: 0.88rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
+    .mode-card .age-tag {
+      display: inline-block;
+      margin-top: 1rem;
+      padding: 0.2em 0.8em;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      border: 1px solid var(--panel-border);
+      color: var(--text-dim);
+    }
+
+    /* ── HUD ── */
+    #hud {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      display: none;
+    }
+
+    #hud.visible { display: block; }
+
+    #hud-top {
+      position: absolute;
+      top: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+    }
+
+    #hud-top .mission-title {
+      font-family: 'Orbitron', monospace;
+      font-size: clamp(0.7rem, 2vw, 1rem);
+      letter-spacing: 0.2em;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    #phase-bar {
+      position: absolute;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      white-space: nowrap;
+    }
+
+    #phase-bar .phase-label {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+    }
+
+    #phase-bar .phase-dots {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .phase-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 1px solid var(--accent);
+      background: transparent;
+      transition: background 0.4s;
+    }
+
+    .phase-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+    #phase-desc {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+    }
+
+    /* ── Game controls info ── */
+    #game-controls {
+      position: absolute;
+      bottom: 6rem;
+      right: 1.5rem;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      line-height: 2;
+      pointer-events: none;
+      display: none;
+    }
+
+    #game-controls.visible { display: block; }
+    #game-controls span { color: var(--accent); font-family: 'Orbitron', monospace; font-size: 0.7rem; }
+
+    /* ── Speed/altitude readouts (game mode) ── */
+    #telemetry {
+      position: absolute;
+      top: 5rem;
+      left: 1.5rem;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 0.75rem 1.2rem;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.75rem;
+      line-height: 2;
+      color: var(--text-dim);
+      display: none;
+    }
+
+    #telemetry.visible { display: block; }
+    #telemetry .val { color: var(--accent); }
+
+    /* ── Back button ── */
+    #btn-back {
+      position: fixed;
+      top: 1.5rem;
+      left: 1.5rem;
+      z-index: 20;
+      pointer-events: all;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      color: var(--text-dim);
+      font-family: 'Exo 2', sans-serif;
+      font-size: 0.82rem;
+      cursor: pointer;
+      display: none;
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    #btn-back:hover { color: var(--accent); border-color: var(--accent); }
+    #btn-back.visible { display: block; }
+
+    /* ── Cinema subtitle bar ── */
+    #subtitle {
+      position: absolute;
+      bottom: 7rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 0.6rem 1.5rem;
+      font-size: 0.9rem;
+      color: var(--text);
+      max-width: 600px;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.5s;
+      pointer-events: none;
+    }
+
+    #subtitle.show { opacity: 1; }
+
+    /* ── Loading bar ── */
+    #loading-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: var(--sky-top);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2rem;
+      transition: opacity 0.8s;
+    }
+
+    #loading-screen.fade-out { opacity: 0; pointer-events: none; }
+
+    #loading-screen .load-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 1.2rem;
+      letter-spacing: 0.2em;
+      color: var(--accent);
+    }
+
+    #loading-bar-track {
+      width: 300px;
+      height: 3px;
+      background: rgba(0,212,255,0.15);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    #loading-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.3s;
+      box-shadow: 0 0 10px var(--accent);
+    }
+
+    #loading-status {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      letter-spacing: 0.1em;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Loading screen -->
+  <div id="loading-screen">
+    <div class="load-title">SKYDOCK INITIALIZING</div>
+    <div id="loading-bar-track"><div id="loading-bar-fill"></div></div>
+    <div id="loading-status">Preparing environment...</div>
+  </div>
+
+  <!-- Three.js canvas -->
+  <div id="canvas-container"></div>
+
+  <!-- Mode selection -->
+  <div id="mode-select">
+    <div class="logo">SKYDOCK</div>
+    <div class="tagline">Autonomous Rooftop Delivery System</div>
+    <div class="mode-cards">
+      <div class="mode-card" id="btn-cinema">
+        <span class="icon">🎬</span>
+        <h2>Cinema Demo</h2>
+        <p>Watch a fully automated delivery flight — from warehouse pickup to rooftop deployment.</p>
+        <span class="age-tag">Sit back &amp; watch</span>
+      </div>
+      <div class="mode-card" id="btn-game">
+        <span class="icon">🎮</span>
+        <h2>Fly It Yourself</h2>
+        <p>Take control of the drone. Navigate the neighborhood and complete the delivery mission.</p>
+        <span class="age-tag">Interactive flight</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- HUD (shown during play) -->
+  <div id="hud">
+    <div id="hud-top">
+      <div class="mission-title" id="mission-title">DELIVERY MISSION ACTIVE</div>
+    </div>
+    <div id="subtitle"></div>
+    <div id="phase-bar">
+      <span class="phase-label">PHASE</span>
+      <div class="phase-dots">
+        <div class="phase-dot" id="dot-0"></div>
+        <div class="phase-dot" id="dot-1"></div>
+        <div class="phase-dot" id="dot-2"></div>
+        <div class="phase-dot" id="dot-3"></div>
+      </div>
+      <span id="phase-desc">Approaching warehouse</span>
+    </div>
+    <div id="telemetry">
+      ALT <span class="val" id="tel-alt">0</span>m&nbsp;&nbsp;
+      SPD <span class="val" id="tel-spd">0</span>m/s
+    </div>
+    <div id="game-controls">
+      <span>W/S</span> Forward / Back<br>
+      <span>A/D</span> Strafe Left / Right<br>
+      <span>↑/↓</span> Ascend / Descend<br>
+      <span>←/→</span> Rotate<br>
+      <span>SPACE</span> Deliver Package
+    </div>
+  </div>
+
+  <button id="btn-back">← Menu</button>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
