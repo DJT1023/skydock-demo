@@ -36,38 +36,41 @@ const CINEMA_WAYPOINTS = [
     phase: 'approach',
   },
   {
-    pos: new THREE.Vector3(60, 18, -22),
+    pos: new THREE.Vector3(60,20, -22),
     camOffset: new THREE.Vector3(-10, 8, 15),
     subtitle: 'Target acquired: SkyDock rooftop unit. Signaling activation…',
     phase: 'preopen',
     triggerReceptacle: true,
   },
   {
-    pos: new THREE.Vector3(60, 14, -22),
+    pos: new THREE.Vector3(60, 20, -22),
     camOffset: new THREE.Vector3(-8, 6, 12),
     subtitle: 'Phase 1 — Dock rotating to horizontal position.',
     phase: 'phase1',
   },
   {
-    pos: new THREE.Vector3(60, 12, -22),
+    pos: new THREE.Vector3(60, 20, -22),
     camOffset: new THREE.Vector3(-6, 5, 10),
     subtitle: 'Phase 2 — Delivery platform extending.',
     phase: 'phase2',
   },
   {
-    pos: new THREE.Vector3(60, 10, -22),
+    pos: new THREE.Vector3(56, 16, -22),
     camOffset: new THREE.Vector3(0, 4, 12),
     subtitle: 'Phase 3 — Landing surface deploying. Cleared for approach.',
     phase: 'phase3',
   },
   {
-    pos: new THREE.Vector3(60, 8, -30),
+    pos: new THREE.Vector3(56, 14, -30),
     camOffset: new THREE.Vector3(15, 5, 8),
     subtitle: 'Package delivered. Mission complete. SkyDock securing.',
     phase: 'land',
     dropPackage: true,
   },
 ];
+
+const GEOFENCE_CENTER = new THREE.Vector3(55, 13, -30);
+const GEOFENCE_RADIUS = 15;  // adjust this trigger distance
 
 export class AppControls {
   constructor({ scene, camera, renderer, drone, receptacle, neighborhood, clock }) {
@@ -106,8 +109,8 @@ export class AppControls {
     const houseData = this.neighborhood.houses.find(h => h.isDelivery);
     const ry = houseData ? houseData.roofY : 10;
     this.receptacle.placeAt(
-      DELIVERY_HOUSE_POS.x,
-      DELIVERY_HOUSE_POS.y + ry,
+      DELIVERY_HOUSE_POS.x - 2.5,
+      DELIVERY_HOUSE_POS.y + ry + 3.95,
       DELIVERY_HOUSE_POS.z
     );
   }
@@ -119,7 +122,10 @@ export class AppControls {
   }
 
   _setupKeyboard() {
-    window.addEventListener('keydown', e => { this.keys[e.code] = true; });
+    window.addEventListener('keydown', e => { 
+      this.keys[e.code] = true;
+      if (e.code === 'Space') e.preventDefault(); // prevent page scroll
+     });
     window.addEventListener('keyup',   e => { this.keys[e.code] = false; });
   }
 
@@ -190,6 +196,26 @@ export class AppControls {
   update(delta) {
     updateDrone(this.drone, delta);
     this.receptacle.update(delta);
+  // handle cinematic move if active
+    if (this.pendingMove) {
+      const pm = this.pendingMove;
+      const elapsed = this.clock.elapsedTime - pm.startTime;
+      const t = Math.min(elapsed / pm.duration, 1);
+      const eased = this._easeInOut(t);
+
+      this.drone.position.lerpVectors(pm.startPos, pm.targetPos, eased);
+
+    // camera follows smoothly
+      const camOffset = new THREE.Vector3(-10, 8, 15);
+      const camTarget = this.drone.position.clone().add(camOffset);
+      this.camera.position.lerp(camTarget, 0.05);
+      this.camera.lookAt(this.drone.position.clone().add(new THREE.Vector3(0, 2, 0)));
+
+      if (t >= 1) {
+        this.pendingMove = null;
+        if (pm.onComplete) pm.onComplete();
+      }
+    }
 
     if (this.mode === 'cinema') this._updateCinema(delta);
     if (this.mode === 'game')   this._updateGame(delta);
@@ -263,11 +289,58 @@ export class AppControls {
     );
   }
 
+ // ── _startDeliverySequence ────────────────────────────────────────────────────────────
+_startDeliverySequence() {
+  // freeze player input
+  this.mode = 'delivery';
+
+  this._showSubtitle('SkyDock unit detected — initiating delivery sequence');
+  this._setPhaseHUD(2, 'Delivery sequence initiated');
+
+  // cinema takeover waypoints from current position to deposit point
+  const depositPos = new THREE.Vector3(56, 14, -30);
+  const approachPos = new THREE.Vector3(55, 18, -22);  // slightly above and south
+
+  // smoothly fly drone to approach position first
+  this._cinematicMoveTo(approachPos, 2.0, () => {
+
+    // then trigger receptacle
+    this._triggerGameDelivery();
+
+    // wait for receptacle to fully open then descend to deposit
+    setTimeout(() => {
+      this._cinematicMoveTo(depositPos, 3.0, () => {
+
+        // deposit package
+        setTimeout(() => {
+          this.drone.userData.packageMesh.visible = false;
+          this._showSubtitle('Package delivered! Mission complete.');
+          this._setPhaseHUD(3, 'Delivery complete');
+
+          // hand control back to player after a moment
+          setTimeout(() => {
+            this.mode = 'game';
+            this._showSubtitle('Control restored — fly free!');
+          }, 2000);
+        }, 1000);
+      });
+    }, 4000);  // wait for receptacle phases to complete
+  });
+}
+// ── cinematic move ──────────────────────────────────────────────────────────────
+_cinematicMoveTo(targetPos, duration, onComplete) {
+  const startPos = this.drone.position.clone();
+  const startTime = this.clock.elapsedTime;
+
+  // store as pending cinematic move, picked up in update()
+  this.pendingMove = { startPos, targetPos, startTime, duration, onComplete };
+}
+
   // ── Game mode ──────────────────────────────────────────────────────────────
   _updateGame(delta) {
     const drone = this.drone;
     const vel = drone.userData.velocity;
-    const speed = 18;
+    const speed = 45;
     const liftSpeed = 10;
     const turnSpeed = 1.8;
     const drag = 0.88;
@@ -312,21 +385,31 @@ export class AppControls {
     // Telemetry HUD
     document.getElementById('tel-alt').textContent = Math.round(drone.position.y);
     document.getElementById('tel-spd').textContent = Math.round(vel.length() * 10) / 10;
+    document.getElementById('tel-x').textContent = Math.round(drone.position.x);
+    document.getElementById('tel-z').textContent = Math.round(drone.position.z);
 
     // Proximity check — trigger delivery near the house
-    const distToHouse = drone.position.distanceTo(
-      new THREE.Vector3(DELIVERY_HOUSE_POS.x, drone.position.y, DELIVERY_HOUSE_POS.z)
-    );
 
-    if (distToHouse < 25 && !this.deliveryTriggered) {
-      this._showSubtitle('SkyDock unit nearby — press SPACE to trigger delivery sequence!');
-      this._setPhaseHUD(2, 'Approach the rooftop');
-    }
+    const distToFence = drone.position.distanceTo(GEOFENCE_CENTER);
 
-    if (distToHouse < 15 && this.keys['Space'] && !this.deliveryTriggered) {
+    if (distToFence < GEOFENCE_RADIUS && !this.deliveryTriggered) {
       this.deliveryTriggered = true;
-      this._triggerGameDelivery();
+      this._startDeliverySequence();
     }
+
+    //const distToHouse = drone.position.distanceTo(
+    //  new THREE.Vector3(DELIVERY_HOUSE_POS.x, drone.position.y, DELIVERY_HOUSE_POS.z)
+    //);
+
+    //if (distToHouse < 25 && !this.deliveryTriggered) {
+    //  this._showSubtitle('SkyDock unit nearby — press SPACE to trigger delivery sequence!');
+    //  this._setPhaseHUD(2, 'Approach the rooftop');
+    //}
+
+    //if (distToHouse < 15 && this.keys['Space'] && !this.deliveryTriggered) {
+    //  this.deliveryTriggered = true;
+    //  this._triggerGameDelivery();
+   // }
   }
 
   _triggerGameDelivery() {

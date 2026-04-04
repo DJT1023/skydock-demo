@@ -36,8 +36,34 @@ const PHASE3_FILES = [
   'LSPan06.glb',
   'LSPan07.glb',
 ];
+// Phase 4 — reverse of phase 3
+const PHASE4_FILES = [...PHASE3_FILES].reverse();
 
-const ALL_PHASES = [PHASE1_FILES, PHASE2_FILES, PHASE3_FILES];
+// Phase 5 — reverse of phase 2
+const PHASE5_FILES = [...PHASE2_FILES].reverse();
+
+// Phase 6 — tilt inward urging package inside
+const PHASE6_FILES = [
+  'RoofDock_-05deg.glb', 'RoofDock_-10deg.glb', 'RoofDock_-15deg.glb',
+  'RoofDock_-20deg.glb', 'RoofDock_-25deg.glb', 'RoofDock_-30deg.glb',
+  'RoofDock_-35deg.glb', 'RoofDock_-40deg.glb',
+];
+
+// Phase 7 — return to closed (reverse of phase 6 then phase 1)
+const PHASE7_FILES = [
+  ...[...PHASE6_FILES].reverse(),
+  ...PHASE1_FILES.slice().reverse(),
+];
+
+const ALL_PHASES = [
+  PHASE1_FILES,
+  PHASE2_FILES,
+  PHASE3_FILES,
+  PHASE4_FILES,
+  PHASE5_FILES,
+  PHASE6_FILES,
+  PHASE7_FILES,
+];
 
 export class ReceptacleController {
   constructor(scene) {
@@ -93,7 +119,8 @@ export class ReceptacleController {
 
   // ── Preload all GLB files in the background ────────────────────────────────
   _preloadAll() {
-    const allFiles = ALL_PHASES.flat();
+    //const allFiles = ALL_PHASES.flat();
+    const allFiles = [...new Set(ALL_PHASES.flat())];
     let loaded = 0;
     const loadStatus = document.getElementById('loading-status');
 
@@ -200,7 +227,9 @@ export class ReceptacleController {
       // Use loaded GLB
       const gltf = this.cache[file];
       const model = gltf.scene.clone();
+      model.scale.setScalar(2.254);         // Adjust scale to fit rooftop
       model.position.copy(this.position);
+      model.rotation.y = - Math.PI / 2;      // rotate 90° to face south
       model.traverse(child => {
         if (child.isMesh) {
           child.castShadow = true;

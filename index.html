@@ -5,7 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SkyDock — UAV Rooftop Delivery System</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap');
+    
+    @font-face {
+      font-family: 'Orbitron';
+      src: url('/assets/fonts/Orbitron-Regular.ttf') format('truetype');
+      font-weight: 400;
+    }
+    @font-face {
+      font-family: 'Orbitron';
+      src: url('/assets/fonts/Orbitron-Bold.ttf') format('truetype');
+      font-weight: 700;
+    }
+    @font-face {
+      font-family: 'Orbitron';
+      src: url('/assets/fonts/Orbitron-Black.ttf') format('truetype');
+      font-weight: 900;
+    }
+
+    @font-face {
+      font-family: 'Exo 2';
+      src: url('/assets/fonts/Exo2-Light.ttf') format('truetype');
+      font-weight: 300;
+    }
+    @font-face {
+      font-family: 'Exo 2';
+      src: url('/assets/fonts/Exo2-Regular.ttf') format('truetype');
+      font-weight: 400;
+    }
+    @font-face {
+      font-family: 'Exo 2';
+      src: url('/assets/fonts/Exo2-SemiBold.ttf') format('truetype');
+      font-weight: 600;
+    }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -368,16 +399,21 @@
     <div id="phase-bar">
       <span class="phase-label">PHASE</span>
       <div class="phase-dots">
-        <div class="phase-dot" id="dot-0"></div>
-        <div class="phase-dot" id="dot-1"></div>
-        <div class="phase-dot" id="dot-2"></div>
-        <div class="phase-dot" id="dot-3"></div>
+       <div class="phase-dot" id="dot-0"></div>
+       <div class="phase-dot" id="dot-1"></div>
+       <div class="phase-dot" id="dot-2"></div>
+       <div class="phase-dot" id="dot-3"></div>
+       <div class="phase-dot" id="dot-4"></div>
+       <div class="phase-dot" id="dot-5"></div>
+       <div class="phase-dot" id="dot-6"></div>
       </div>
       <span id="phase-desc">Approaching warehouse</span>
     </div>
     <div id="telemetry">
       ALT <span class="val" id="tel-alt">0</span>m&nbsp;&nbsp;
       SPD <span class="val" id="tel-spd">0</span>m/s
+      X <span class="val" id="tel-x">0</span>&nbsp;&nbsp;
+      Z <span class="val" id="tel-z">0</span>
     </div>
     <div id="game-controls">
       <span>W/S</span> Forward / Back<br>

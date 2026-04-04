@@ -29,6 +29,8 @@ export function buildNeighborhood(scene) {
       Math.abs(cfg.x - DELIVERY_HOUSE_POS.x) < 5 &&
       Math.abs(cfg.z - DELIVERY_HOUSE_POS.z) < 5;
 
+    if (isDelivery) return;  // skip it in the loop
+
     const house = buildHouse(scene, cfg.x, cfg.z, i, isDelivery);
     houses.push(house);
   });
@@ -49,10 +51,12 @@ export function buildNeighborhood(scene) {
 
 function buildHouse(scene, x, z, seed, isDelivery = false) {
   const rng = seededRand(seed);
-  const w  = 12 + rng() * 6;
-  const d  = 10 + rng() * 5;
-  const h  = 6  + rng() * 4;
-  const roofH = 3 + rng() * 2;
+  // const w  = 12 + rng() * 6;
+  let w  = 12 + rng() * 6;
+  let d  = 10 + rng() * 5;
+  let h  = 6  + rng() * 4;
+  // const roofH = 3 + rng() * 2; 
+  let roofH = 3 + rng() * 2;
 
   const wallColor  = isDelivery ? 0xe8f0ff : WALL_COLORS[Math.floor(rng() * WALL_COLORS.length)];
   const roofColor  = isDelivery ? 0x2244aa : ROOF_COLORS[Math.floor(rng() * ROOF_COLORS.length)];
@@ -80,8 +84,8 @@ function buildHouse(scene, x, z, seed, isDelivery = false) {
 
   // Left slope
   const slopeGeo = new THREE.BufferGeometry();
-  const halfW = w / 2 + 0.5;
-  const halfD = d / 2 + 0.5;
+  let halfW = w / 2 + 0.5;
+  let halfD = d / 2 + 0.5;
   const verts = new Float32Array([
     -halfW, h, -halfD,   // 0 front-left eave
      halfW, h, -halfD,   // 1 front-right eave
@@ -100,16 +104,50 @@ function buildHouse(scene, x, z, seed, isDelivery = false) {
   slopeGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
   slopeGeo.setIndex(new THREE.BufferAttribute(idx, 1));
   slopeGeo.computeVertexNormals();
-  const roof = new THREE.Mesh(slopeGeo, roofMat);
-  roof.castShadow = true;
-  group.add(roof);
+
+  if (!isDelivery) {
+    const roof = new THREE.Mesh(slopeGeo, roofMat);
+    roof.castShadow = true;
+    group.add(roof);
+  }
 
   // Roof flat top (the receptacle-ready platform area — subtle lighter strip)
   if (isDelivery) {
-    const rooftopMat = new THREE.MeshBasicMaterial({ color: 0x4466cc, transparent: true, opacity: 0.6 });
-    const rooftop = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.6, d * 0.6), rooftopMat);
-    rooftop.rotation.x = -Math.PI / 2;
-    rooftop.position.set(0, h + roofH + 0.05, 0);
+    w = 16;
+    d = 12;
+    h = 0;
+    halfW = w / 2 +0.5;
+    halfD = d / 2;
+    roofH = 8.5;
+
+    const rooftopMat = new THREE.MeshBasicMaterial({ color: 0x4466cc, transparent: true, opacity: 0.8 });
+//--------------
+  const t_verts = new Float32Array([
+    -halfW, h, -halfD,   // 0 front-left eave
+     halfW, h, -halfD,   // 1 front-right eave
+     0,     h + roofH, -halfD, // 2 front ridge
+    -halfW, h,  halfD,   // 3 back-left eave
+     halfW, h,  halfD,   // 4 back-right eave
+     0,     h + roofH,  halfD, // 5 back ridge
+  ]);
+  const t_idx = new Uint16Array([
+    0,1,2,  // front gable
+    3,5,4,  // back gable
+    0,3,2,  2,3,5, // left slope
+    1,2,4,  2,5,4, // right slope
+    0,4,3,  0,1,4, // eaves overhang bottom
+  ]);
+slopeGeo.setAttribute('position', new THREE.BufferAttribute(t_verts, 3));
+slopeGeo.setIndex(new THREE.BufferAttribute(t_idx, 1));
+slopeGeo.computeVertexNormals();
+//--------------
+    //const rooftop = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.6, d * 0.6), rooftopMat);
+    const rooftop = new THREE.Mesh(slopeGeo, rooftopMat);
+    // roofH = w * Math.tan(60* Math.PI / 180) / 2;
+    // roofH = (w/2) * Math.tan(45 * Math.PI / 180);
+    // rooftop.rotation.x = -Math.PI / 2;
+    // rooftop.position.set(0, h + roofH + 0.05, 0);
+    rooftop.position.set(0, roofH - 2.05, 0);
     group.add(rooftop);
 
     // Glowing ring to hint at the landing zone
@@ -117,7 +155,7 @@ function buildHouse(scene, x, z, seed, isDelivery = false) {
     const ringMat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI / 2;
-    ring.position.set(0, h + roofH + 0.1, 0);
+    ring.position.set(0,roofH + 8.1, 0);
     group.add(ring);
   }
 
@@ -143,7 +181,8 @@ function buildTree(scene, x, z) {
   const group = new THREE.Group();
   group.position.set(x, 0, z);
 
-  const h = 3 + Math.random() * 3;
+  // const h = 3 + Math.random() * 3;
+  const h = 2 + Math.random() * 5;  // wider range: 2 to 7
   const trunk = new THREE.Mesh(
     new THREE.CylinderGeometry(0.25, 0.35, h, 6),
     new THREE.MeshLambertMaterial({ color: 0x5c3a1e })
@@ -153,7 +192,8 @@ function buildTree(scene, x, z) {
   group.add(trunk);
 
   const foliage = new THREE.Mesh(
-    new THREE.ConeGeometry(2.2, 4, 7),
+    // new THREE.ConeGeometry(2.2, 4, 7),
+    new THREE.ConeGeometry(1.5 + h * 0.2, 3 + h * 0.4, 7),  // scales with h
     new THREE.MeshLambertMaterial({ color: 0x2d6a2d })
   );
   foliage.position.y = h + 1.8;
