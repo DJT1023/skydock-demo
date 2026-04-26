@@ -122,11 +122,17 @@ export class AppControls {
   }
 
   _setupKeyboard() {
-    window.addEventListener('keydown', e => { 
+    window.addEventListener('keydown', e => {
+      // Prevent page scrolling/side-effects for arrow keys and space
+      if (e.code === 'Space' || e.code.startsWith('Arrow')) { e.preventDefault(); e.stopPropagation(); }
       this.keys[e.code] = true;
-      if (e.code === 'Space') e.preventDefault(); // prevent page scroll
-     });
-    window.addEventListener('keyup',   e => { this.keys[e.code] = false; });
+    });
+    window.addEventListener('keyup', e => {
+      if (e.code === 'Space' || e.code.startsWith('Arrow')) { e.preventDefault(); e.stopPropagation(); }
+      this.keys[e.code] = false;
+    });
+    // Clear keys if the window loses focus to avoid stuck inputs
+    window.addEventListener('blur', () => { this.keys = {}; });
   }
 
   // ── Mode transitions ───────────────────────────────────────────────────────
@@ -250,8 +256,15 @@ export class AppControls {
 
   // ── Main update tick ───────────────────────────────────────────────────────
   update(delta) {
-    updateDrone(this.drone, delta);
     this.receptacle.update(delta);
+    // Sync dropped package with receptacle phase frames if enabled
+    if (this._syncPackageEnabled && this.droppedPackage && this.receptacle.currentPhase === this._syncPackagePhase) {
+      const frame = this.receptacle.currentFrame;
+      const frames = Math.max(1, this._syncPackageFrames || 1);
+      const t = Math.min(1, frame / frames);
+      // linear interpolation along X
+      this.droppedPackage.position.x = this._syncPackageBaseX + this._syncPackageDeltaX * t;
+    }
   // handle cinematic move if active
     if (this.pendingMove) {
       const pm = this.pendingMove;
@@ -278,6 +291,9 @@ export class AppControls {
 
     if (this.mode === 'cinema') this._updateCinema(delta);
     if (this.mode === 'game')   this._updateGame(delta);
+
+    // Update drone after applying control inputs so tilt uses current yaw/velocity
+    updateDrone(this.drone, delta);
   }
 
   // ── Cinema mode ────────────────────────────────────────────────────────────
@@ -458,7 +474,11 @@ _cinematicMoveTo(targetPos, duration, onComplete) {
     this._setPhaseHUD(3, 'SkyDock deploying…');
     this._showSubtitle('Triggering SkyDock transition sequence!');
 
-    this.receptacle.startTransition({ pauseAfterPhase: 2, onPhase: this._onReceptaclePhase.bind(this) }, () => {
+    this.receptacle.startTransition({
+      pauseAfterPhase: 2,
+      onPhase: this._onReceptaclePhase.bind(this),
+      onPhaseStart: this._onReceptaclePhaseStart.bind(this),
+    }, () => {
       // final completion of receptacle (after phase 7)
       this._showSubtitle('SkyDock sequence complete.');
       this._setPhaseHUD(3, 'Delivery complete');
@@ -515,12 +535,34 @@ _cinematicMoveTo(targetPos, duration, onComplete) {
       }, 1200);
     }
 
-    // Phase 5 completed -> receptacle has urged package inside; remove it
-    if (completedPhase === 5) {
+    // After phase 5 completes, the receptacle will run phase 6
+    // Remove the dropped package here so it disappears during phase 6
+    if (completedPhase === 4) {
       if (this.droppedPackage) {
         try { this.scene.remove(this.droppedPackage); } catch (e) {}
         this.droppedPackage = null;
+        console.log('[Controls] _onReceptaclePhase — dropped package removed (during phase 6)');
       }
+    }
+  }
+
+  // Called by receptacle when a new phase starts (phase index = 0..6)
+  _onReceptaclePhaseStart(phaseIdx) {
+    // Phase 4 (0-based) is the PHASE5_FILES — sync package X during this phase
+    if (phaseIdx === 4) {
+      if (!this.droppedPackage) return;
+      // Record base X and frame count, enable sync
+      this._syncPackagePhase = phaseIdx;
+      this._syncPackageBaseX = this.droppedPackage.position.x;
+      // amount to move along X while platform retracts — compute toward receptacle center
+      // (this ensures correct direction regardless of world coords)
+      this._syncPackageDeltaX = (this.receptacle.position.x - this._syncPackageBaseX) || -1.2;
+      this._syncPackageFrames = this.receptacle.getPhaseLength(phaseIdx) || 1;
+      this._syncPackageEnabled = true;
+      console.log('[Controls] _onReceptaclePhaseStart — syncing package to platform', { phaseIdx, frames: this._syncPackageFrames });
+    } else {
+      // disable any sync when entering other phases
+      this._syncPackageEnabled = false;
     }
   }
 

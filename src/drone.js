@@ -2,6 +2,9 @@ import * as THREE from 'three';
 
 export function createDrone(scene) {
   const group = new THREE.Group();
+  // Make the drone findable from DevTools: give it a name and (when available) expose on window
+  group.name = 'drone';
+  if (typeof window !== 'undefined') window.drone = group;
 
   const bodyMat  = new THREE.MeshLambertMaterial({ color: 0x222831 });
   const armMat   = new THREE.MeshLambertMaterial({ color: 0x333d4a });
@@ -91,9 +94,25 @@ export function createDrone(scene) {
     propSpeed: 0,
     tiltX: 0,
     tiltZ: 0,
+    // Runtime toggle to invert pitch mapping if the model's forward orientation differs
+    pitchSign: 1,
   };
 
   group.position.set(-140, 5, 0);
+
+  // Ensure a rotation order that applies yaw (Y) before pitch (X) and roll (Z)
+  group.rotation.order = 'YXZ';
+
+  // Auto-detect approximate facing (E/W vs N/S) and pick a pitchSign so
+  // forward motion yields a consistent nose-down visual across headings.
+  // getWorldDirection returns the object's local -Z direction in world space.
+  const _fw = new THREE.Vector3();
+  group.getWorldDirection(_fw);
+  if (Math.abs(_fw.x) > Math.abs(_fw.z)) {
+    // Facing mostly east/west: if +X (east) prefer -1, if -X (west) prefer +1
+    group.userData.pitchSign = _fw.x > 0 ? -1 : 1;
+    console.log('[Drone] auto pitchSign=', group.userData.pitchSign, 'forwardWorld=', _fw.toArray());
+  }
 
   return group;
 }
@@ -115,8 +134,25 @@ export function updateDrone(drone, delta) {
   }
 
   // Smooth tilt based on velocity
-  const targetTiltZ = -d.velocity.x * 0.04;
-  const targetTiltX =  d.velocity.z * 0.04;
+  // Compute velocity in the drone's local frame (world -> local via inverse quaternion)
+  const pitchFactor = 0.04;
+  const rollFactor = 0.04;
+
+  const localVel = d.velocity.clone().applyQuaternion(drone.quaternion.clone().invert());
+  // localVel.z is forward/back in drone local space (negative means forward if the model faces -Z)
+  const localForwardZ = localVel.z;
+  const localRightX = localVel.x;
+
+  // Map local forward/right speeds to pitch (rotation.x) and roll (rotation.z).
+  // Apply runtime pitch sign so user can invert mapping from DevTools if needed.
+  const targetTiltX = (d.pitchSign ?? 1) * localForwardZ * pitchFactor;
+  const targetTiltZ = -localRightX * rollFactor;
+
+  // Debug: log local-frame velocities and target tilt when significant forward/back motion present
+  if (Math.abs(localForwardZ) > 0.08) {
+    console.log('[Drone] yaw=', drone.rotation.y.toFixed(2), 'vel(world)=', d.velocity.toArray().map(v=>v.toFixed(2)), 'vel(local)=', localVel.toArray().map(v=>v.toFixed(2)), 'localZ=', localForwardZ.toFixed(2), 'targetPitch=', targetTiltX.toFixed(3));
+  }
+
   d.tiltX += (targetTiltX - d.tiltX) * 5 * delta;
   d.tiltZ += (targetTiltZ - d.tiltZ) * 5 * delta;
   drone.rotation.x = d.tiltX;

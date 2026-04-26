@@ -100,7 +100,7 @@ export class ReceptacleController {
     const geo = new THREE.BoxGeometry(3, 0.15, 3);
     const mat = new THREE.MeshLambertMaterial({ color: 0x2244aa, transparent: true, opacity: 0.85 });
     this.placeholder = new THREE.Mesh(geo, mat);
-
+//trigger the same 
     // Pivot hinge indicator
     const hingeGeo = new THREE.CylinderGeometry(0.08, 0.08, 3.2, 8);
     const hingeMat = new THREE.MeshLambertMaterial({ color: 0x00d4ff });
@@ -185,10 +185,12 @@ export class ReceptacleController {
     if (opts) {
       this._pauseAfterPhase = opts.pauseAfterPhase ?? null;
       this._onPhase = opts.onPhase ?? null;
+      this._onPhaseStart = opts.onPhaseStart ?? null;
       this._onComplete = arguments[1] || null;
     } else {
       this._pauseAfterPhase = null;
       this._onPhase = null;
+      this._onPhaseStart = null;
       this._onComplete = onComplete || null;
     }
 
@@ -204,7 +206,10 @@ export class ReceptacleController {
   pauseTransition() {
     this.isAnimating = false;
     this._isPaused = true;
-    console.log('[Receptacle] pauseTransition at phase', this.currentPhase);
+    // Consume one-shot pause so that a subsequent resume won't immediately
+    // trigger the same pause again (which would prevent advancing phases).
+    this._pauseAfterPhase = null;
+    console.log('[Receptacle] pauseTransition at phase', this.currentPhase, '(pause consumed)');
   }
 
   resumeTransition() {
@@ -248,6 +253,11 @@ export class ReceptacleController {
       // Advance to next phase
       this.currentPhase++;
       this.currentFrame = 0;
+
+      // Notify phase-start callback (useful for syncing external objects)
+      if (this._onPhaseStart) {
+        try { this._onPhaseStart(this.currentPhase); } catch (e) { console.warn(e); }
+      }
 
       if (this.currentPhase >= ALL_PHASES.length) {
         // All phases complete
@@ -323,5 +333,11 @@ export class ReceptacleController {
   // ── Change animation speed ────────────────────────────────────────────────
   setSpeed(fps) {
     this.frameDuration = 1 / fps;
+  }
+
+  // Return number of frames in a given phase (0-based phase index)
+  getPhaseLength(phaseIdx) {
+    if (phaseIdx < 0 || phaseIdx >= ALL_PHASES.length) return 0;
+    return ALL_PHASES[phaseIdx].length;
   }
 }
