@@ -177,13 +177,41 @@ export class ReceptacleController {
 
   // ── Start the full transition sequence ────────────────────────────────────
   startTransition(onComplete) {
+    // Backwards-compatible signature:
+    // startTransition(onComplete)
+    // or startTransition(options, onComplete)
     if (this.isAnimating) return;
+    const opts = (typeof onComplete === 'object' && onComplete) ? onComplete : null;
+    if (opts) {
+      this._pauseAfterPhase = opts.pauseAfterPhase ?? null;
+      this._onPhase = opts.onPhase ?? null;
+      this._onComplete = arguments[1] || null;
+    } else {
+      this._pauseAfterPhase = null;
+      this._onPhase = null;
+      this._onComplete = onComplete || null;
+    }
+
     this.isAnimating = true;
+    this._isPaused = false;
     this.currentPhase = 0;
     this.currentFrame = 0;
     this.animTimer = 0;
-    this._onComplete = onComplete || null;
     this.show();
+    console.log('[Receptacle] startTransition', { pauseAfterPhase: this._pauseAfterPhase });
+  }
+
+  pauseTransition() {
+    this.isAnimating = false;
+    this._isPaused = true;
+    console.log('[Receptacle] pauseTransition at phase', this.currentPhase);
+  }
+
+  resumeTransition() {
+    if (!this._isPaused) return;
+    this._isPaused = false;
+    this.isAnimating = true;
+    console.log('[Receptacle] resumeTransition at phase', this.currentPhase);
   }
 
   // ── Tick: called every frame from controls.js ─────────────────────────────
@@ -195,9 +223,28 @@ export class ReceptacleController {
     this.animTimer = 0;
 
     const phase = ALL_PHASES[this.currentPhase];
+
     this.currentFrame++;
 
+    // If we've just completed the current phase (passed last frame)
     if (this.currentFrame >= phase.length) {
+      const completedPhase = this.currentPhase;
+
+        // Notify phase completion callback
+        console.log('[Receptacle] completedPhase', completedPhase);
+        if (this._onPhase) {
+          try { this._onPhase(completedPhase); } catch (e) { console.warn(e); }
+        }
+
+      // Pause if requested for this completed phase
+      if (this._pauseAfterPhase !== null && this._pauseAfterPhase === completedPhase) {
+        this.pauseTransition();
+        // Keep showing the last frame of the completed phase (do not advance)
+        this.currentFrame = phase.length - 1;
+        this._showFrame(completedPhase, this.currentFrame);
+        return;
+      }
+
       // Advance to next phase
       this.currentPhase++;
       this.currentFrame = 0;
@@ -239,6 +286,7 @@ export class ReceptacleController {
       this.scene.add(model);
       this.currentMesh = model;
       this.placeholder.visible = false;
+      console.log('[Receptacle] showFrame', { phaseIdx, frameIdx, file });
     } else {
       // Fallback to placeholder with animated rotation/extension
       this.placeholder.visible = true;

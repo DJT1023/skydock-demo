@@ -131,6 +131,7 @@ export class AppControls {
 
   // ── Mode transitions ───────────────────────────────────────────────────────
   _startCinema() {
+    this._resetDeliveryState();
     this.mode = 'cinema';
     this.cinemaWaypointIdx = 0;
     this.cinemaT = 0;
@@ -153,6 +154,7 @@ export class AppControls {
   }
 
   _startGame() {
+    this._resetDeliveryState();
     this.mode = 'game';
     this.yaw = 0;
     this.gamePhase = 'warehouse';
@@ -177,6 +179,7 @@ export class AppControls {
   }
 
   _goMenu() {
+    this._resetDeliveryState();
     this.mode = 'menu';
     this.drone.userData.isFlying = false;
     this.receptacle.hide();
@@ -190,6 +193,59 @@ export class AppControls {
 
     this.drone.position.set(-140, 5, 0);
     this.drone.userData.velocity.set(0, 0, 0);
+  }
+
+  // Reset delivery-related state so repeated runs start clean
+  _resetDeliveryState() {
+    console.log('[Controls] _resetDeliveryState — clearing state');
+    // flags
+    this._phase2Handled = false;
+    this.deliveryTriggered = false;
+    this.receptacleTriggered = false;
+
+    // remove any dropped package from scene
+    if (this.droppedPackage) {
+      try { this.scene.remove(this.droppedPackage); } catch (e) {}
+      this.droppedPackage = null;
+    }
+
+    // Also remove any lingering clones named 'dropped-package' (defensive)
+    try {
+      const toRemove = [];
+      this.scene.traverse(obj => {
+        if (obj && obj.name === 'dropped-package') toRemove.push(obj);
+      });
+      toRemove.forEach(o => { try { this.scene.remove(o); } catch (e) {} });
+    } catch (e) {}
+
+    // Ensure drone package mesh is attached and visible
+    const pkg = this.drone.userData && this.drone.userData.packageMesh;
+    if (pkg) {
+      // Ensure original package is attached to drone and visible
+      try {
+        if (pkg.parent && pkg.parent !== this.drone) {
+          pkg.parent.remove(pkg);
+        }
+      } catch (e) {}
+      try { this.drone.add(pkg); } catch (e) {}
+      pkg.position.set(0, -0.85, 0);
+      pkg.visible = true;
+      this.drone.userData.hasPackage = true;
+      console.log('[Controls] _resetDeliveryState — restored original package to drone');
+    }
+
+    // Reset receptacle internal callbacks and visibility
+    if (this.receptacle) {
+      try {
+        this.receptacle.hide();
+        this.receptacle.showClosed();
+        this.receptacle.isAnimating = false;
+        this.receptacle._isPaused = false;
+        this.receptacle._pauseAfterPhase = null;
+        this.receptacle._onPhase = null;
+        this.receptacle._onComplete = null;
+      } catch (e) {}
+    }
   }
 
   // ── Main update tick ───────────────────────────────────────────────────────
@@ -213,7 +269,10 @@ export class AppControls {
 
       if (t >= 1) {
         this.pendingMove = null;
-        if (pm.onComplete) pm.onComplete();
+        if (pm.onComplete) {
+          console.log('[Controls] cinematic move complete to', pm.targetPos.toArray());
+          try { pm.onComplete(); } catch (e) { console.warn(e); }
+        }
       }
     }
 
@@ -243,14 +302,11 @@ export class AppControls {
           wp.subtitle.split('.')[0]
         );
 
-        // Trigger receptacle transition
+        // Trigger receptacle transition — hand off to central delivery choreography
         if (wp.triggerReceptacle && !this.receptacleTriggered) {
           this.receptacleTriggered = true;
-          setTimeout(() => {
-            this.receptacle.startTransition(() => {
-              this._showSubtitle('SkyDock fully deployed. Ready to receive package.');
-            });
-          }, 800);
+          // switch into delivery mode and run the same choreography as game
+          setTimeout(() => this._startDeliverySequence(), 800);
         }
 
         // Drop package at delivery
@@ -294,6 +350,8 @@ _startDeliverySequence() {
   // freeze player input
   this.mode = 'delivery';
 
+  console.log('[Controls] _startDeliverySequence — mode set to', this.mode);
+
   this._showSubtitle('SkyDock unit detected — initiating delivery sequence');
   this._setPhaseHUD(2, 'Delivery sequence initiated');
 
@@ -304,27 +362,10 @@ _startDeliverySequence() {
   // smoothly fly drone to approach position first
   this._cinematicMoveTo(approachPos, 2.0, () => {
 
-    // then trigger receptacle
+    // trigger the receptacle transition — pause after phase 2 so
+    // the same choreography (descend, deposit, ascend) runs for both
+    // cinema and game flows via the onPhase callback.
     this._triggerGameDelivery();
-
-    // wait for receptacle to fully open then descend to deposit
-    setTimeout(() => {
-      this._cinematicMoveTo(depositPos, 3.0, () => {
-
-        // deposit package
-        setTimeout(() => {
-          this.drone.userData.packageMesh.visible = false;
-          this._showSubtitle('Package delivered! Mission complete.');
-          this._setPhaseHUD(3, 'Delivery complete');
-
-          // hand control back to player after a moment
-          setTimeout(() => {
-            this.mode = 'game';
-            this._showSubtitle('Control restored — fly free!');
-          }, 2000);
-        }, 1000);
-      });
-    }, 4000);  // wait for receptacle phases to complete
   });
 }
 // ── cinematic move ──────────────────────────────────────────────────────────────
@@ -333,7 +374,8 @@ _cinematicMoveTo(targetPos, duration, onComplete) {
   const startTime = this.clock.elapsedTime;
 
   // store as pending cinematic move, picked up in update()
-  this.pendingMove = { startPos, targetPos, startTime, duration, onComplete };
+    this.pendingMove = { startPos, targetPos, startTime, duration, onComplete };
+    console.log('[Controls] cinematic move start to', targetPos.toArray(), 'duration', duration);
 }
 
   // ── Game mode ──────────────────────────────────────────────────────────────
@@ -416,15 +458,70 @@ _cinematicMoveTo(targetPos, duration, onComplete) {
     this._setPhaseHUD(3, 'SkyDock deploying…');
     this._showSubtitle('Triggering SkyDock transition sequence!');
 
-    this.receptacle.startTransition(() => {
-      this._showSubtitle('SkyDock fully deployed! Lower the drone to deliver your package.');
-      setTimeout(() => {
-        this.drone.userData.packageMesh.visible = false;
-        this._showSubtitle('Package delivered successfully! Mission complete.');
-        this._setPhaseHUD(3, 'Delivery complete');
-        document.getElementById('dot-3').classList.add('active');
-      }, 3000);
+    this.receptacle.startTransition({ pauseAfterPhase: 2, onPhase: this._onReceptaclePhase.bind(this) }, () => {
+      // final completion of receptacle (after phase 7)
+      this._showSubtitle('SkyDock sequence complete.');
+      this._setPhaseHUD(3, 'Delivery complete');
+      const dot = document.getElementById('dot-3'); if (dot) dot.classList.add('active');
     });
+  }
+
+  // Detach the package from the drone and place it at depositPoint
+  _depositPackage(depositPoint) {
+    const pkg = this.drone.userData.packageMesh;
+    if (!pkg) return;
+    // Create a dropped clone so the original stays attached to the drone
+    const dropped = pkg.clone();
+    dropped.name = 'dropped-package';
+    dropped.position.copy(depositPoint);
+    dropped.position.y -= 1.05;
+    this.scene.add(dropped);
+    this.droppedPackage = dropped;
+    // hide original package on drone
+    try { pkg.visible = false; } catch (e) {}
+    this.drone.userData.hasPackage = false;
+    console.log('[Controls] _depositPackage created clone at', depositPoint.toArray());
+  }
+
+  // Called by receptacle when a phase completes
+  _onReceptaclePhase(completedPhase) {
+    // completedPhase is 0-based; phase 2 == after phase 3 (open)
+    if (completedPhase === 2) {
+      if (this._phase2Handled) return;
+      this._phase2Handled = true;
+
+      const depositPos = new THREE.Vector3(56, 14, -30);
+      const hoverPoint = new THREE.Vector3(55, 20, -22);
+
+      // Dramatic pause before descending
+      setTimeout(() => {
+        // Descend to deposit point
+        this._cinematicMoveTo(depositPos, 2.5, () => {
+          // Wait briefly then deposit
+          setTimeout(() => {
+            this._depositPackage(depositPos);
+
+            // Ascend back to hover
+            setTimeout(() => {
+              this._cinematicMoveTo(hoverPoint, 2.0, () => {
+                // Short pause then resume receptacle phases
+                setTimeout(() => {
+                  this.receptacle.resumeTransition();
+                }, 500);
+              });
+            }, 600);
+          }, 0);
+        });
+      }, 1200);
+    }
+
+    // Phase 5 completed -> receptacle has urged package inside; remove it
+    if (completedPhase === 5) {
+      if (this.droppedPackage) {
+        try { this.scene.remove(this.droppedPackage); } catch (e) {}
+        this.droppedPackage = null;
+      }
+    }
   }
 
   // ── HUD helpers ────────────────────────────────────────────────────────────
