@@ -96,6 +96,8 @@ export function createDrone(scene) {
     tiltZ: 0,
     // Runtime toggle to invert pitch mapping if the model's forward orientation differs
     pitchSign: 1,
+    // Toggle verbose logging (default: off). Set `window.DRONE_DEBUG = true` in DevTools to enable.
+    debugLogs: (typeof window !== 'undefined') ? !!window.DRONE_DEBUG : false,
   };
 
   group.position.set(-140, 5, 0);
@@ -111,7 +113,7 @@ export function createDrone(scene) {
   if (Math.abs(_fw.x) > Math.abs(_fw.z)) {
     // Facing mostly east/west: if +X (east) prefer -1, if -X (west) prefer +1
     group.userData.pitchSign = _fw.x > 0 ? -1 : 1;
-    console.log('[Drone] auto pitchSign=', group.userData.pitchSign, 'forwardWorld=', _fw.toArray());
+    if (group.userData.debugLogs) console.log('[Drone] auto pitchSign=', group.userData.pitchSign, 'forwardWorld=', _fw.toArray());
   }
 
   return group;
@@ -149,7 +151,7 @@ export function updateDrone(drone, delta) {
   const targetTiltZ = -localRightX * rollFactor;
 
   // Debug: log local-frame velocities and target tilt when significant forward/back motion present
-  if (Math.abs(localForwardZ) > 0.08) {
+  if (d.debugLogs && Math.abs(localForwardZ) > 0.08) {
     console.log('[Drone] yaw=', drone.rotation.y.toFixed(2), 'vel(world)=', d.velocity.toArray().map(v=>v.toFixed(2)), 'vel(local)=', localVel.toArray().map(v=>v.toFixed(2)), 'localZ=', localForwardZ.toFixed(2), 'targetPitch=', targetTiltX.toFixed(3));
   }
 

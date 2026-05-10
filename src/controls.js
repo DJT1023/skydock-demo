@@ -181,7 +181,7 @@ export class AppControls {
     this.receptacle.showClosed();
     this.receptacle.isVisible = true;
     this._setPhaseHUD(0, 'Pick up the package & fly to the delivery house');
-    this._showSubtitle('Use W/A/S/D and arrow keys to fly. Press SPACE near the house to deliver!');
+    this._showSubtitle('Use W/A/S/D and arrow keys to fly.');
   }
 
   _goMenu() {
@@ -227,7 +227,7 @@ export class AppControls {
     // Ensure drone package mesh is attached and visible
     const pkg = this.drone.userData && this.drone.userData.packageMesh;
     if (pkg) {
-      // Ensure original package is attached to drone and visible
+      // Ensure original package is attached to drone and visible_cinematicMoveTo
       try {
         if (pkg.parent && pkg.parent !== this.drone) {
           pkg.parent.remove(pkg);
@@ -365,6 +365,8 @@ export class AppControls {
 _startDeliverySequence() {
   // freeze player input
   this.mode = 'delivery';
+  //this.drone.rotation.x = 0; // level out for cinematic handoff
+  //this.drone.rotation.z = 0;
 
   console.log('[Controls] _startDeliverySequence — mode set to', this.mode);
 
@@ -396,7 +398,8 @@ _cinematicMoveTo(targetPos, duration, onComplete) {
 
   // ── Game mode ──────────────────────────────────────────────────────────────
   _updateGame(delta) {
-    const drone = this.drone;
+    let drone = this.drone;
+    // const drone = this.drone;
     const vel = drone.userData.velocity;
     const speed = 45;
     const liftSpeed = 10;
@@ -452,22 +455,11 @@ _cinematicMoveTo(targetPos, duration, onComplete) {
 
     if (distToFence < GEOFENCE_RADIUS && !this.deliveryTriggered) {
       this.deliveryTriggered = true;
+      //drone.rotation.x = 0; // level out for cinematic handoff
+      //drone.rotation.z = 0;
       this._startDeliverySequence();
     }
 
-    //const distToHouse = drone.position.distanceTo(
-    //  new THREE.Vector3(DELIVERY_HOUSE_POS.x, drone.position.y, DELIVERY_HOUSE_POS.z)
-    //);
-
-    //if (distToHouse < 25 && !this.deliveryTriggered) {
-    //  this._showSubtitle('SkyDock unit nearby — press SPACE to trigger delivery sequence!');
-    //  this._setPhaseHUD(2, 'Approach the rooftop');
-    //}
-
-    //if (distToHouse < 15 && this.keys['Space'] && !this.deliveryTriggered) {
-    //  this.deliveryTriggered = true;
-    //  this._triggerGameDelivery();
-   // }
   }
 
   _triggerGameDelivery() {
@@ -527,6 +519,7 @@ _cinematicMoveTo(targetPos, duration, onComplete) {
                 // Short pause then resume receptacle phases
                 setTimeout(() => {
                   this.receptacle.resumeTransition();
+                  if (this.mode === 'delivery') this.mode = 'game';   // return control to player after handoff
                 }, 500);
               });
             }, 600);
