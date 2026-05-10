@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  base: '/skydock-demo/',    // ← git or local
   publicDir: 'public',
   build: {
-    outDir: 'dist',
+    outDir: 'docs',
     assetsDir: 'assets',
   },
   server: {
