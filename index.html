@@ -103,6 +103,14 @@
       margin-bottom: 4rem;
     }
 
+    #mode-select .patent {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      letter-spacing: 0.2em;
+      margin-bottom: 2rem;
+      opacity: 0.7;
+    }
+
     .mode-cards {
       display: flex;
       gap: 2rem;
@@ -229,6 +237,17 @@
     #phase-desc {
       font-size: 0.82rem;
       color: var(--text-dim);
+    }
+
+    #copyright {
+      position: fixed;
+      bottom: 0.5rem;
+      right: 1rem;
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      opacity: 0.5;
+      pointer-events: none;
+      z-index: 10;
     }
 
     /* ── Game controls info ── */
@@ -374,6 +393,7 @@
   <div id="mode-select">
     <div class="logo">SKYDOCK</div>
     <div class="tagline">Autonomous Rooftop Delivery System</div>
+    <div class="patent">Patent No. US20220356019A1</div>
     <div class="mode-cards">
       <div class="mode-card" id="btn-cinema">
         <span class="icon">🎬</span>
@@ -422,6 +442,9 @@
       <span>←/→</span> Rotate<br>
     </div>
   </div>
+
+<!-- Copyright — always visible, outside HUD -->
+  <div id="copyright">© 2024 DJT · Patent US20220356019A1</div>
 
   <button id="btn-back">← Menu</button>
 
