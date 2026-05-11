@@ -1,6 +1,9 @@
 # SkyDock — UAV Rooftop Delivery System Demo
 
-Interactive Three.js demo for US Patent 20220356019A1.
+Interactive Three.js demo for US Patent US20220356019A1.
+**© 2024 DJT. All rights reserved.**
+Interactive marketing demo built with Three.js.
+
 Two modes: cinematic auto-flight and manual game flight.
 
 ---
