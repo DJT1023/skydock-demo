@@ -125,7 +125,7 @@ export class ReceptacleController {
     const loadStatus = document.getElementById('loading-status');
 
     allFiles.forEach(file => {
-      const url = `/assets/${file}`;
+      const url = `./assets/${file}`; // adjust for github pages
       this.loader.load(
         url,
         (gltf) => {
