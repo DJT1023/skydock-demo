@@ -103,6 +103,18 @@ export class AppControls {
     this._setupUI();
     this._setupKeyboard();
     this._placeReceptacle();
+    // Mobile touch controls state (two on-screen joysticks)
+    this._joyLeft = { x: 0, y: 0, active: false, pointerId: null, el: null, stickEl: null, _handlers: null };
+    this._joyRight = { x: 0, y: 0, active: false, pointerId: null, el: null, stickEl: null, _handlers: null };
+    this._touchActive = false;
+    this._isMobile = (typeof window !== 'undefined') && (
+      (window.matchMedia && window.matchMedia('(max-width:480px)').matches) ||
+      ('ontouchstart' in window) ||
+      (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)
+    );
+    if (this._isMobile) {
+      try { this._setupTouchControls(); } catch (e) { console.warn('[Controls] _setupTouchControls init failed', e); }
+    }
   }
 
   _placeReceptacle() {
@@ -135,6 +147,101 @@ export class AppControls {
     window.addEventListener('blur', () => { this.keys = {}; });
   }
 
+  // ── Touch / Mobile joystick setup ─────────────────────────────────────────
+  _setupTouchControls() {
+    try {
+      const left = document.getElementById('joy-left');
+      const right = document.getElementById('joy-right');
+      if (!left || !right) return;
+
+      this._joyLeft.el = left;
+      this._joyLeft.stickEl = left.querySelector('.stick');
+      this._joyRight.el = right;
+      this._joyRight.stickEl = right.querySelector('.stick');
+
+      const attach = (joy) => {
+        const el = joy.el;
+        const stick = joy.stickEl;
+        const getMaxRadius = () => Math.min(el.clientWidth || 100, el.clientHeight || 100) * 0.45;
+        const updateStick = (dx, dy) => { if (stick) stick.style.transform = `translate(${dx}px, ${dy}px)`; };
+        const setStateFromEvent = (e) => {
+          const rect = el.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          let dx = e.clientX - cx;
+          let dy = e.clientY - cy;
+          const max = getMaxRadius() || (rect.width/2);
+          const dist = Math.hypot(dx, dy);
+          if (dist > max) { const s = max / dist; dx *= s; dy *= s; }
+          joy.x = Math.max(-1, Math.min(1, dx / max));
+          joy.y = Math.max(-1, Math.min(1, dy / max));
+          updateStick(dx, dy);
+          this._touchActive = !!(this._joyLeft.active || this._joyRight.active);
+        };
+
+        const onPointerDown = (e) => {
+          e.preventDefault();
+          el.setPointerCapture(e.pointerId);
+          joy.pointerId = e.pointerId;
+          joy.active = true;
+          setStateFromEvent(e);
+        };
+
+        const onPointerMove = (e) => {
+          if (joy.pointerId !== null && e.pointerId !== joy.pointerId) return;
+          if (!joy.active) return;
+          setStateFromEvent(e);
+        };
+
+        const onPointerUp = (e) => {
+          if (joy.pointerId !== null && e.pointerId !== joy.pointerId) return;
+          try { el.releasePointerCapture(e.pointerId); } catch (err) {}
+          joy.pointerId = null;
+          joy.active = false;
+          joy.x = 0; joy.y = 0;
+          updateStick(0, 0);
+          this._touchActive = !!(this._joyLeft.active || this._joyRight.active);
+        };
+
+        el.addEventListener('pointerdown', onPointerDown, { passive: false });
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerUp);
+
+        joy._handlers = { onPointerDown, onPointerMove, onPointerUp };
+      };
+
+      attach(this._joyLeft);
+      attach(this._joyRight);
+
+      // Prefer touch behavior for the page while joysticks exist
+      if (!document.body.style.touchAction) document.body.style.touchAction = 'none';
+    } catch (e) {
+      console.warn('[Controls] _setupTouchControls error', e);
+    }
+  }
+
+  _destroyTouchControls() {
+    try {
+      [this._joyLeft, this._joyRight].forEach((joy) => {
+        if (!joy || !joy.el) return;
+        const h = joy._handlers || {};
+        if (h.onPointerDown) joy.el.removeEventListener('pointerdown', h.onPointerDown);
+        if (h.onPointerMove) window.removeEventListener('pointermove', h.onPointerMove);
+        if (h.onPointerUp) { window.removeEventListener('pointerup', h.onPointerUp); window.removeEventListener('pointercancel', h.onPointerUp); }
+        if (joy.stickEl) joy.stickEl.style.transform = 'translate(0, 0)';
+        joy._handlers = null;
+        joy.pointerId = null;
+        joy.active = false;
+        joy.x = 0; joy.y = 0;
+      });
+      this._touchActive = false;
+      document.body.style.touchAction = '';
+    } catch (e) {
+      console.warn('[Controls] _destroyTouchControls error', e);
+    }
+  }
+
   // ── Mode transitions ───────────────────────────────────────────────────────
   _startCinema() {
     this._resetDeliveryState();
@@ -152,6 +259,7 @@ export class AppControls {
     document.getElementById('mission-title').textContent = 'AUTONOMOUS DELIVERY MISSION';
     document.getElementById('game-controls').classList.remove('visible');
     document.getElementById('telemetry').classList.remove('visible');
+    const mc = document.getElementById('mobile-controls'); if (mc) mc.classList.remove('visible');
 
     this._setPhaseHUD(0, 'Departing warehouse');
     this.drone.position.copy(CINEMA_WAYPOINTS[0].pos);
@@ -176,6 +284,7 @@ export class AppControls {
     document.getElementById('mission-title').textContent = 'DELIVERY MISSION — MANUAL CONTROL';
     document.getElementById('game-controls').classList.add('visible');
     document.getElementById('telemetry').classList.add('visible');
+    const mc = document.getElementById('mobile-controls'); if (mc) mc.classList.add('visible');
 
     this.drone.position.set(-140, 5, 0);
     this.receptacle.showClosed();
@@ -196,6 +305,7 @@ export class AppControls {
     document.getElementById('game-controls').classList.remove('visible');
     document.getElementById('telemetry').classList.remove('visible');
     document.getElementById('subtitle').classList.remove('show');
+    const mc = document.getElementById('mobile-controls'); if (mc) mc.classList.remove('visible');
 
     this.drone.position.set(-140, 5, 0);
     this.drone.userData.velocity.set(0, 0, 0);
@@ -406,21 +516,37 @@ _cinematicMoveTo(targetPos, duration, onComplete) {
     const turnSpeed = 1.8;
     const drag = 0.88;
 
-    // Yaw
-    if (this.keys['ArrowLeft'])  this.yaw += turnSpeed * delta;
-    if (this.keys['ArrowRight']) this.yaw -= turnSpeed * delta;
+    // Yaw (touch right joystick has priority on mobile)
+    if (this._touchActive && this._joyRight) {
+      const rx = this._joyRight.x || 0;
+      // invert horizontal for natural rotation (right -> rotate right)
+      this.yaw += -rx * turnSpeed * delta;
+    } else {
+      if (this.keys['ArrowLeft'])  this.yaw += turnSpeed * delta;
+      if (this.keys['ArrowRight']) this.yaw -= turnSpeed * delta;
+    }
     drone.rotation.y = this.yaw;
 
     // Forward/back/strafe in local space
     const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
-    if (this.keys['KeyW']) vel.addScaledVector(fwd, speed * delta);
-    if (this.keys['KeyS']) vel.addScaledVector(fwd, -speed * delta);
-    if (this.keys['KeyA']) vel.addScaledVector(right, -speed * delta);
-    if (this.keys['KeyD']) vel.addScaledVector(right, speed * delta);
-    if (this.keys['ArrowUp'])   vel.y += liftSpeed * delta;
-    if (this.keys['ArrowDown']) vel.y -= liftSpeed * delta;
+    if (this._touchActive) {
+      const lj = this._joyLeft || { x: 0, y: 0 };
+      const rj = this._joyRight || { x: 0, y: 0 };
+      // Left joystick: vertical -> forward/back (invert Y), horizontal -> strafe
+      if (Math.abs(lj.y) > 0.05) vel.addScaledVector(fwd, -lj.y * speed * delta);
+      if (Math.abs(lj.x) > 0.05) vel.addScaledVector(right, lj.x * speed * delta);
+      // Right joystick vertical -> lift (invert to make upward screen drag ascend)
+      if (Math.abs(rj.y) > 0.05) vel.y += -rj.y * liftSpeed * delta;
+    } else {
+      if (this.keys['KeyW']) vel.addScaledVector(fwd, speed * delta);
+      if (this.keys['KeyS']) vel.addScaledVector(fwd, -speed * delta);
+      if (this.keys['KeyA']) vel.addScaledVector(right, -speed * delta);
+      if (this.keys['KeyD']) vel.addScaledVector(right, speed * delta);
+      if (this.keys['ArrowUp'])   vel.y += liftSpeed * delta;
+      if (this.keys['ArrowDown']) vel.y -= liftSpeed * delta;
+    }
 
     // Drag
     vel.x *= drag;
