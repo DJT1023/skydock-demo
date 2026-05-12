@@ -414,6 +414,70 @@
       color: var(--text-dim);
       letter-spacing: 0.1em;
     }
+
+@media (max-width: 480px) {
+
+  /* hide phase dots on mobile */
+  #phase-bar {
+    display: none;
+  }
+
+  /* move subtitle to bottom, full width, translucent */
+  #subtitle {
+    position: fixed;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 92vw;
+    max-width: 92vw;
+    font-size: 0.75rem;
+    text-align: center;
+    background: rgba(10, 20, 40, 0.5);   /* more translucent */
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    bottom: 1.5rem;
+  }
+
+  /* hide game controls panel on mobile */
+  #game-controls {
+    display: none;
+  }
+
+  /* shrink telemetry */
+  #telemetry {
+    font-size: 0.62rem;
+    padding: 0.4rem 0.7rem;
+    top: 4rem;
+  }
+
+  /* shrink back button */
+  #btn-back {
+    font-size: 0.72rem;
+    padding: 0.4rem 0.7rem;
+  }
+
+  /* shrink mission title */
+  #mission-title {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+  }
+
+  /* mode select cards full width */
+  .mode-cards {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .mode-card {
+    min-width: 85vw;
+    padding: 1.5rem;
+  }
+
+  .logo {
+    font-size: 2.2rem;
+  }
+}    
   </style>
   <script type="module" crossorigin src="/skydock-demo/assets/index-C3eYQRb5.js"></script>
 </head>
