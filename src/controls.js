@@ -367,6 +367,11 @@ export class AppControls {
   // ── Main update tick ───────────────────────────────────────────────────────
   update(delta) {
     this.receptacle.update(delta);
+     // during delivery always look at receptacle
+    if (this.mode === 'delivery') {
+      this.camera.position.lerp(this._observationCam, 0.05);
+      this.camera.lookAt(this.receptacle.position);
+    }
     // Sync dropped package with receptacle phase frames if enabled
     if (this._syncPackageEnabled && this.droppedPackage && this.receptacle.currentPhase === this._syncPackagePhase) {
       const frame = this.receptacle.currentFrame;
@@ -384,12 +389,13 @@ export class AppControls {
 
       this.drone.position.lerpVectors(pm.startPos, pm.targetPos, eased);
 
-    // camera follows smoothly
-      const camOffset = new THREE.Vector3(-10, 8, 15);
-      const camTarget = this.drone.position.clone().add(camOffset);
-      this.camera.position.lerp(camTarget, 0.05);
-      this.camera.lookAt(this.drone.position.clone().add(new THREE.Vector3(0, 2, 0)));
-
+    // camera follows smoothly in cinematic mode, but in delivery mode we lock to a fixed observation angle, so skip interpolation there
+      if (this.mode !== 'delivery') {
+        const camOffset = new THREE.Vector3(-10, 8, 15);
+        const camTarget = this.drone.position.clone().add(camOffset);
+        this.camera.position.lerp(camTarget, 0.05);
+        this.camera.lookAt(this.drone.position.clone().add(new THREE.Vector3(0, 2, 0)));
+      }
       if (t >= 1) {
         this.pendingMove = null;
         if (pm.onComplete) {
@@ -473,11 +479,19 @@ export class AppControls {
 
  // ── _startDeliverySequence ────────────────────────────────────────────────────────────
 _startDeliverySequence() {
+  if (this.deliveryTriggered) return;
+  this.deliveryTriggered = true;
+  this.previousMode = this.mode;
   // freeze player input
   this.mode = 'delivery';
+  // lock camera to observation angle immediately
+  const observationCam = new THREE.Vector3(35, 25, -5);
+  this.camera.position.copy(observationCam);
+  this.camera.lookAt(this.receptacle.position);
   //this.drone.rotation.x = 0; // level out for cinematic handoff
   //this.drone.rotation.z = 0;
-
+ // store observation cam for use throughout sequence
+  this._observationCam = observationCam;
   console.log('[Controls] _startDeliverySequence — mode set to', this.mode);
 
   this._showSubtitle('SkyDock unit detected — initiating delivery sequence');
@@ -578,9 +592,9 @@ _cinematicMoveTo(targetPos, duration, onComplete) {
     // Proximity check — trigger delivery near the house
 
     const distToFence = drone.position.distanceTo(GEOFENCE_CENTER);
-
+    //console.log('dist to fence:', Math.round(distToFence), 'triggered:', this.deliveryTriggered, 'mode:', this.mode);
     if (distToFence < GEOFENCE_RADIUS && !this.deliveryTriggered) {
-      this.deliveryTriggered = true;
+      //this.deliveryTriggered = true;
       //drone.rotation.x = 0; // level out for cinematic handoff
       //drone.rotation.z = 0;
       this._startDeliverySequence();
